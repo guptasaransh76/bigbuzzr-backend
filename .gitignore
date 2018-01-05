@@ -57,3 +57,8 @@ typings/
 # dotenv environment variables file
 .env
 
+#Remove webstorm config
+.idea/
+
+#Remove Mac config
+.DS_Store

@@ -1,0 +1,45 @@
+CREATE TABLE `buzzer`.`users` (
+  `user_id` INT NOT NULL AUTO_INCREMENT,
+  `user_name` VARCHAR(100) NOT NULL,
+  `password` VARCHAR(100) NOT NULL,
+  `salt` VARCHAR(100) NULL,
+  `role` VARCHAR(50) NOT NULL,
+  `last_login` TIMESTAMP(6) NULL,
+  PRIMARY KEY (`user_id`),
+  UNIQUE INDEX `user_id_UNIQUE` (`user_id` ASC),
+  UNIQUE INDEX `user_name_UNIQUE` (`user_name` ASC));
+
+
+  CREATE TABLE `buzzer`.`banks` (
+  `question_id` INT NOT NULL,
+  `bank_id` VARCHAR(45) NULL,
+  `bank_name` VARCHAR(100) NULL,
+  `question` VARCHAR(100) NULL,
+  `option_1` VARCHAR(100) NULL,
+  `option_2` VARCHAR(100) NULL,
+  `option_3` VARCHAR(100) NULL,
+  `option_4` VARCHAR(100) NULL,
+  `answer` INT NULL,
+  `creator` INT NULL,
+  `created_date` TIMESTAMP(6) NULL,
+  `last_modified` TIMESTAMP(6) NULL,
+  PRIMARY KEY (`question_id`),
+  UNIQUE INDEX `question_id_UNIQUE` (`question_id` ASC));
+
+
+CREATE TABLE `buzzer`.`quiz` (
+  `quiz_id` INT NOT NULL AUTO_INCREMENT,
+  `creator` INT NULL,
+  `creation_date` TIMESTAMP(6) NULL,
+  `quiz_hash` VARCHAR(100) NULL,
+  `is_finished` VARCHAR(100) BINARY NULL,
+  `quiz_data` BLOB NULL,
+  PRIMARY KEY (`quiz_id`),
+  UNIQUE INDEX `quiz_id_UNIQUE` (`quiz_id` ASC));
+
+
+CREATE TABLE `buzzer`.`score` (
+  `quiz_id` INT NOT NULL,
+  `quiz_hash` VARCHAR(100) NOT NULL,
+  `score_data` BLOB NULL,
+  PRIMARY KEY (`quiz_id`, `quiz_hash`));
