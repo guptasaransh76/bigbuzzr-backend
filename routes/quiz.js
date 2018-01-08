@@ -1,148 +1,188 @@
 var express = require('express');
+var mysql = require('mysql');
+var randomstring = require('randomstring');
+
 var router = express.Router();
 var logger = require('../utilities/logger');
 var dbUtils = require('../utilities/dbUtil');
-var mysql = require('mysql');
 
-function tableDetails(req, res, next) {
-  logger.info("Quiz get_all_quiz_details - start");
-  if (req.user) {
-    return getAllContent();
-  } else {
-    res.appData = {
-      'status': 'failure',
-      'message': 'unauthorized'
-    };
-    return next();
-  }
-
-  function getAllContent() {
-    let query = 'SELECT * FROM quiz WHERE ?? = ?';
-
-    dbUtils.query(query, [])
-      .then(getResults)
-      .catch(function (err, message) {
-        logger.info(err);
-        res.appData = {
-          'status': 'failure',
-          'message': message
-        };
-        return next();
-      });
-  }
-
-  function getResults(results, field) {
-    logger.info("Quiz get_quiz_all_content_results - start");
-
-    if (results.length <= 0) {
+startQuiz = function(req, res, next) {
+    if (req.user) {
+      return validateRunningQuiz();
+    } else {
       res.appData = {
         'status': 'failure',
-        'message': err
+        'message': 'unauthorized'
       };
 
       return next();
     }
 
-    res.appData = {
-      'status': 'success',
-      'message': '',
-      'data': results
-    };
+    function validateRunningQuiz() {
+        let query = "SELECT * FROM quiz WHERE creator = ? AND is_finished = ?";
+        const params = [req.user.user_id, 'incomplete'];
 
-    return next();
-  }
-};
+        query = mysql.format(query, params);
+        return dbUtils.query(query, []).then(
+          getValidationResults
+        ).catch(
+          (err, message) => {
+            res.appData = {
+              'status': 'failure',
+              'message': err
+            };
 
-function getBanksAll(req, res, next) {
-  logger.info("Quiz Populate_Droplist - start");
-  if (req.user) {
-    return getAllBanks();
-  } else {
-    res.appData = {
-      'status': 'failure',
-      'message': 'unauthorized'
-    };
-    return next();
-  }
+            return next();
+          }
+        );
+    }
 
-  function getAllBanks() {
-    let query = 'SELECT DISTINCT bank_name, bank_id FROM banks';
+    function getValidationResults(results, fields) {
+        if (results.length === 0) {
+            return createQuiz();
+        } else {
+          req.session.game = {
+            quiz_id: results[0].quiz_id,
+            isMaster: true
+          };
 
-    dbUtils.query(query, [])
-      .then(getResults)
-      .catch(function (err, message) {
-        logger.info(err);
-        res.appData = {
-          'status': 'failure',
-          'message': message
+          res.appData = {
+            'status': 'failure',
+            'message': 'quiz is already running'
+          };
+
+          return next();
+        }
+    }
+
+    function createQuiz() {
+        const hash = randomstring.generate({
+          length: 4,
+          charset: 'alphabetic'
+        });
+
+        const quizData = {
+          question_banks: req.body.questionBanks,
+          players: {},
+          kickedPlayers: [],
+          questions: [],
+          alreadyAsked: {}
         };
-        return next();
-      });
-  }
 
-  function getResults(results, field) {
-    logger.info("Quiz Populate_Droplist_results - start");
+        let query = "INSERT INTO quiz SET ?";
+        const params = {
+          'creator': req.user.user_id,
+          'quiz_hash': hash,
+          'is_finished': 'incomplete',
+          'quiz_data': JSON.stringify(quizData)
+        };
 
-    if (results.length <= 0) {
+        query = mysql.format(query, params);
+        return dbUtils.query(query, []).then(
+          getQuizId
+        ).catch(
+          (err, message) => {
+            res.appData = {
+              'status': 'failure',
+              'message': err
+            };
+
+            return next();
+          }
+        );
+    }
+
+    function getQuizId(results, fields) {
+      let quizId = results.insertId;
+
+      let query = "SELECT quiz_id, creation_date, quiz_hash, is_finished as creator_name FROM quiz WHERE quiz_id = ?";
+      const params = [quizId];
+
+      query = mysql.format(query, params);
+      return dbUtils.query(query, []).then(
+        compileData
+      ).catch(
+        (err, message) => {
+          res.appData = {
+            'status': 'failure',
+            'message': err
+          };
+
+          return next();
+        }
+      );
+    }
+
+    function compileData(results, fields) {
+      const data = {
+        gameTag: results[0].quiz_id + results[0].quiz_hash
+      };
+
+      req.session.game = {
+        "quiz_id": results[0].quiz_id,
+        "isMaster": true
+      };
+
       res.appData = {
-        'status': 'failure',
-        'message': err
+        'status': 'success',
+        'message': '',
+        'data': data
       };
 
       return next();
     }
 
-    res.appData = {
-      'status': 'success',
-      'message': '',
-      'data': results
-    };
-
-    return next();
-  }
 };
 
-function getQuestionsAll(req, res, next) {
-  logger.info("Quiz populate_Droplist_with_questions_all - start");
+getQuiz = function(req, res, next) {
   if (req.user) {
-    return getAllQuestions();
+    return getQuizData();
   } else {
     res.appData = {
       'status': 'failure',
       'message': 'unauthorized'
     };
+
     return next();
   }
 
-  function getAllQuestions() {
-    let query = 'SELECT question, question_id FROM banks where ?? = ?';
-    const params = ['bank_id', req.params.bank_id];
+  function getQuizData() {
+    let query = "SELECT quiz_id, creator as creator_id, creation_date, quiz_hash, is_finished, u.name as creator_name FROM quiz q, users u WHERE q.creator = u.user_id";
+    let params = [];
+    if (req.user.role !== 'admin') {
+      query += " AND creator = ?";
+      params.push(req.user.user_id);
+    }
+
+    if (req.query.search) {
+      query += " AND u.name LIKE ?";
+      params.push("%" + req.query.search + "%");
+
+    }
+
+    if (req.query.isFinished) {
+      query += " AND q.is_finished = ?";
+      params.push(req.query.isFinished === 'true' ? "complete" : "incomplete");
+    }
+
+    query += " ORDER BY creation_date DESC";
+
     query = mysql.format(query, params);
-
-    dbUtils.query(query, [])
-      .then(getResults)
-      .catch(function (err, message) {
-        logger.info(err);
+    return dbUtils.query(query, []).then(
+      compileData
+    ).catch(
+      (err, message) => {
         res.appData = {
           'status': 'failure',
-          'message': message
+          'message': err
         };
+
         return next();
-      });
+      }
+    );
   }
 
-  function getResults(results, field) {
-    logger.info("Quiz populate_Droplist_with_questions_all_results - start");
-
-    if (results.length <= 0) {
-      res.appData = {
-        'status': 'failure',
-        'message': err
-      };
-
-      return next();
-    }
-
+  function compileData(results, fields) {
     res.appData = {
       'status': 'success',
       'message': '',
@@ -153,15 +193,100 @@ function getQuestionsAll(req, res, next) {
   }
 };
 
+getQuizById = function(req, res, next) {
+  if (req.user) {
+    return getQuizData();
+  } else {
+    res.appData = {
+      'status': 'failure',
+      'message': 'unauthorized'
+    };
 
+    return next();
+  }
 
+  function getQuizData() {
+    let query = "SELECT quiz_id, creator as creator_id, creation_date, quiz_hash, is_finished, u.name as creator_name FROM quiz q, users u WHERE quiz_id = ?"
+    const params = [req.params.quizId];
 
-//router.get('/', tableDetails);
-router.get('/', getBanksAll);
-router.get('/:bank_id/questions', getQuestionsAll);
+    query = mysql.format(query, params);
+    return dbUtils.query(query, []).then(
+      compileData
+    ).catch(
+      (err, message) => {
+        res.appData = {
+          'status': 'failure',
+          'message': err
+        };
 
-//router.get('/:bank_id/questions', getQuestionsAll);
+        return next();
+      }
+    );
 
+    function compileData(results, fields) {
+      if (results.length <= 0) {
+        res.appData = {
+          'status': 'failure',
+          'message': 'no data found'
+        };
+      } else {
+        res.appData = {
+          'status': 'success',
+          'message': '',
+          'data': results[0]
+        };
+      }
 
+      return next();
+    }
+  }
+};
+
+updateQuiz = function(req, res, next) {
+  if (req.user) {
+    return updateQuizData();
+  } else {
+    res.appData = {
+      'status': 'failure',
+      'message': 'unauthorized'
+    };
+
+    return next();
+  }
+
+  function updateQuizData() {
+    let query = "UPDATE quiz SET is_finished = ? WHERE quiz_id = ?";
+    const params = ['complete', req.params.quizId];
+
+    query = mysql.format(query, params);
+    return dbUtils.query(query, []).then(
+      compileData
+    ).catch(
+      (err, message) => {
+        res.appData = {
+          'status': 'failure',
+          'message': err
+        };
+
+        return next();
+      }
+    );
+
+    function compileData(results, fields) {
+        res.appData = {
+          'status': 'success',
+          'message': '',
+          'data': ''
+        };
+
+      return next();
+    }
+  }
+};
+
+router.post('/', startQuiz);
+router.get('/', getQuiz);
+router.get('/:quizId', getQuizById);
+router.patch('/:quizId', updateQuiz);
 
 module.exports = router;
