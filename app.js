@@ -11,6 +11,7 @@ var users = require('./routes/users');
 var auth = require('./routes/auth');
 var banks = require('./routes/banks');
 var quiz = require ('./routes/quiz');
+var game = require('./routes/game');
 var fs = require('fs');
 
 var session = require('express-session');
@@ -99,6 +100,7 @@ app.use('/api/users', users);
 app.use('/api/auth', auth);
 app.use('/api/banks', banks);
 app.use('/api/quiz', quiz);
+app.use('/api/game', game);
 app.use(restUtil.createResponse);
 
 //app.use('*', index);

@@ -62,3 +62,6 @@ typings/
 
 #Remove Mac config
 .DS_Store
+
+#Removing db host file from tracking
+config/dbConfig.js
